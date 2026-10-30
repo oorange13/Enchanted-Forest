@@ -1,9 +1,11 @@
 // ==UserScript==
-// @name         Enchanted Forest - Universal (Winter/Autumn)
+// @name         Enchanted Forest
+ // @version      3.10.34
 // @namespace    http://tampermonkey.net/
-// @version      3.10.35
-// @updateURL    https://mus.avito.ru/cf/download/attachments/438601250/enchanted_forest.user.js?api=v2
-// @downloadURL  https://mus.avito.ru/cf/download/attachments/438601250/enchanted_forest.user.js?api=v2
+
+ // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
+ // @downloadURL  https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
+
 // @description  Зачарованный лес на всех сайтах: зима ❄️ / осень 🍂, персонажи и встроенные звуки
 // @author       You
 // @match        *://*/*
