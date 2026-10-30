@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Enchanted Forest
- // @version      3.10.36
+// @version      3.10.37
 // @namespace    http://tampermonkey.net/
 
- // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
- // @downloadURL  https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
+// @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
+// @downloadURL  https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
 
 // @description  Зачарованный лес на всех сайтах: зима ❄️ / осень 🍂, персонажи и встроенные звуки
 // @author       You
@@ -530,6 +530,8 @@
       #${ID} .ef-snail.ef-bounce{animation:ef-bounce .65s ease}
       #${ID} .ef-snail img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none}
       #${ID} .ef-snail-open{z-index:1}
+      #${ID} .ef-snail-gaze{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+      #${ID} .ef-snail:not([data-blink-frame="open"]) .ef-snail-gaze{opacity:0}
       #${ID} .ef-snail-eyelid{z-index:2;opacity:0}
       #${ID} .ef-snail-eye-left{clip-path:ellipse(8.5% 13.5% at 48.5% 24%)}
       #${ID} .ef-snail-eye-right{clip-path:ellipse(8.5% 13.5% at 69.5% 24%)}
@@ -686,12 +688,13 @@
       /* Падающие частицы кликабельны только при включённой игре. */
       #${ID}.ef-collecting .ef-leaf{pointer-events:auto;cursor:pointer;touch-action:manipulation}
       #${ID} .ef-collection-score{
-        display:flex;align-items:center;gap:7px;align-self:center;white-space:nowrap;
-        padding:5px 9px;border:1px solid ${theme.panelBorder};border-radius:9px;
+        display:flex;align-items:center;gap:9px;align-self:center;white-space:nowrap;
+        padding:6px 10px;border:1px solid ${theme.panelBorder};border-radius:9px;
         background:${theme.panelBg};color:${theme.panelText};box-shadow:0 3px 12px #0003;
-        font:12px/1.2 Georgia,serif;pointer-events:none;user-select:none;
+        font:600 12px/1.3 system-ui,"Segoe UI",Arial,sans-serif;pointer-events:none;user-select:none;
       }
-      #${ID} .ef-collection-score span{display:inline-flex;align-items:center;gap:3px}
+      #${ID} .ef-collection-score span{display:inline-flex;align-items:center;gap:4px}
+      #${ID} .ef-collection-score svg{display:block;width:16px;height:16px;flex:none}
       #${ID} .ef-collection-score strong{font-weight:600;font-variant-numeric:tabular-nums}
       #${ID} .ef-spark{
         position:absolute;width:6px;height:6px;border-radius:50%;
@@ -1705,6 +1708,7 @@
     snail.setAttribute("role", "button");
     snail.setAttribute("tabindex", "0");
     snail.setAttribute("aria-label", "Нажми на улиточку, чтобы получить послание");
+    let snailOpenImage = null;
     for (const name of ["open", "half-left", "half-right", "closed-left", "closed-right"]) {
       const image = document.createElement("img");
       const pose = name.split("-")[0];
@@ -1714,7 +1718,96 @@
       image.alt = "";
       image.setAttribute("aria-hidden", "true");
       snail.append(image);
+      if (name === "open") snailOpenImage = image;
     }
+    // Слой взгляда использует радужки из исходного рисунка. Контуры глаз остаются сверху,
+    // а при моргании этот слой скрывается под уже существующими кадрами век.
+    const snailGaze = document.createElement("canvas");
+    snailGaze.className = "ef-snail-gaze";
+    snailGaze.width = 768;
+    snailGaze.height = 512;
+    snailGaze.setAttribute("aria-hidden", "true");
+    snail.insertBefore(snailGaze, snail.children[1]);
+    const snailGazeContext = snailGaze.getContext("2d");
+    const snailEyes = [
+      {x: 367, y: 127, rx: 29, ry: 28, socketX: 367, socketY: 125, socketRx: 47, socketRy: 46},
+      {x: 535, y: 120, rx: 28, ry: 28, socketX: 536, socketY: 121, socketRx: 47, socketRy: 46}
+    ];
+    let snailGazeX = 0;
+    let snailGazeY = 0;
+    let snailTargetX = 0;
+    let snailTargetY = 0;
+    let snailGazeFrame = 0;
+    let snailPointer = null;
+    function drawSnailGaze() {
+      if (!snailGazeContext || !snailOpenImage?.complete || !snailOpenImage.naturalWidth) return;
+      const ctx = snailGazeContext;
+      ctx.clearRect(0, 0, 768, 512);
+      for (const eye of snailEyes) {
+        const dx = snailGazeX * 11;
+        const dy = snailGazeY * 7;
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(eye.socketX, eye.socketY, eye.socketRx, eye.socketRy, 0, 0, Math.PI * 2);
+        ctx.clip();
+        const white = ctx.createLinearGradient(0, eye.y - 32, 0, eye.y + 34);
+        white.addColorStop(0, "#fffdf0");
+        white.addColorStop(.55, "#fff2cd");
+        white.addColorStop(1, "#f6d486");
+        ctx.fillStyle = white;
+        ctx.beginPath();
+        ctx.ellipse(eye.x, eye.y, eye.rx + 2, eye.ry + 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(eye.x + dx, eye.y + dy, eye.rx, eye.ry, 0, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(snailOpenImage,
+          eye.x - eye.rx, eye.y - eye.ry, eye.rx * 2, eye.ry * 2,
+          eye.x - eye.rx + dx, eye.y - eye.ry + dy, eye.rx * 2, eye.ry * 2);
+        ctx.restore();
+        ctx.restore();
+      }
+    }
+    function animateSnailGaze() {
+      snailGazeFrame = 0;
+      if (disposed || selectedCharacter !== "snail" || !characterVisible || document.hidden) return;
+      if (snailPointer) {
+        const rect = snail.getBoundingClientRect();
+        const centerX = rect.left + rect.width * .59;
+        const centerY = rect.top + rect.height * .24;
+        snailTargetX = Math.max(-1, Math.min(1, (snailPointer.x - centerX) / Math.max(100, rect.width * 1.3)));
+        snailTargetY = Math.max(-1, Math.min(1, (snailPointer.y - centerY) / Math.max(100, rect.height * 1.3)));
+      }
+      snailGazeX += (snailTargetX - snailGazeX) * .22;
+      snailGazeY += (snailTargetY - snailGazeY) * .22;
+      drawSnailGaze();
+      if (Math.abs(snailTargetX - snailGazeX) > .01 || Math.abs(snailTargetY - snailGazeY) > .01) {
+        snailGazeFrame = requestAnimationFrame(animateSnailGaze);
+      }
+    }
+    function scheduleSnailGaze() {
+      if (!snailGazeFrame) snailGazeFrame = requestAnimationFrame(animateSnailGaze);
+    }
+    function resetSnailGaze() {
+      cancelAnimationFrame(snailGazeFrame);
+      snailGazeFrame = 0;
+      snailPointer = null;
+      snailTargetX = snailTargetY = snailGazeX = snailGazeY = 0;
+      drawSnailGaze();
+    }
+    listen(snailOpenImage, "load", drawSnailGaze);
+    if (snailOpenImage.complete) drawSnailGaze();
+    listen(window, "pointermove", event => {
+      if (selectedCharacter !== "snail" || !characterVisible) return;
+      snailPointer = {x: event.clientX, y: event.clientY};
+      scheduleSnailGaze();
+    });
+    listen(document, "pointerleave", () => {
+      snailPointer = null;
+      snailTargetX = snailTargetY = 0;
+      scheduleSnailGaze();
+    });
     const snailShadow = document.createElement("div");
     snailShadow.className = "ef-snail-shadow";
     snailShadow.setAttribute("aria-hidden", "true");
@@ -2030,6 +2123,7 @@
     const characters = {mushroom, frog, pumpkin, sausage, snail, goose, aliens};
 
     function updateCharacterVisibility() {
+      if (!characterVisible || selectedCharacter !== "snail") resetSnailGaze();
       if (!characterVisible || selectedCharacter !== "goose") resetGooseGaze();
       mushroom.style.display = characterVisible && selectedCharacter === "mushroom" ? "" : "none";
       frog.style.display = characterVisible && selectedCharacter === "frog" ? "" : "none";
@@ -2330,8 +2424,10 @@
     const collectionScore = document.createElement("div");
     collectionScore.className = "ef-collection-score";
     collectionScore.setAttribute("aria-label", "Собрано снежинок и листьев");
-    collectionScore.innerHTML = `<span title="Собрано снежинок">❄ <strong data-score-winter>0</strong></span>` +
-      `<span title="Собрано осенних листьев">🍂 <strong data-score-autumn>0</strong></span>`;
+    const snowIcon = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 2v20M3.34 7l17.32 10M3.34 17l17.32-10M9 5l3 2 3-2M9 19l3-2 3 2M4.8 11l3.3.2-.7-3.2M19.2 13l-3.3-.2.7 3.2M7.4 16l.7-3.2-3.3.2M16.6 8l-.7 3.2 3.3-.2" stroke="#d9f1ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const leafIcon = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M20 3C12 3 5 6 4 13c-1 5 2 8 6 8 7 0 10-9 10-18Z" fill="#d78a42" stroke="#f5c881" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 20c4-6 8-10 13-14" stroke="#7b4a24" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+    collectionScore.innerHTML = `<span title="Собрано снежинок">${snowIcon}<strong data-score-winter>0</strong></span>` +
+      `<span title="Собрано осенних листьев">${leafIcon}<strong data-score-autumn>0</strong></span>`;
     function updateCollectedScore() {
       const snow = collectionScore.querySelector("[data-score-winter]");
       const leaves = collectionScore.querySelector("[data-score-autumn]");
@@ -2605,6 +2701,7 @@
       resetGooseBlink();
       resetAliensBlink();
       resetAliensMotion();
+      cancelAnimationFrame(snailGazeFrame);
       cancelAnimationFrame(gooseGazeFrame);
       gooseSettleAnimation?.cancel();
       clearTimeout(messageTimer);
