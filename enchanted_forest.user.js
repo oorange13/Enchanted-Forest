@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enchanted Forest
- // @version      3.10.34
+ // @version      3.10.36
 // @namespace    http://tampermonkey.net/
 
  // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
@@ -16,6 +16,7 @@
 // @grant        GM_removeValueChangeListener
 // @run-at       document-idle
 // ==/UserScript==
+
 
 (() => {
   "use strict";
@@ -1768,8 +1769,8 @@
     goose.insertBefore(gooseGaze, goose.children[1]);
     const gooseGazeContext = gooseGaze.getContext("2d");
     const gooseEyes = [
-      {x: 267, y: 199, rx: 23, ry: 32, limitX: 8, limitY: 6},
-      {x: 390, y: 224, rx: 24, ry: 32, limitX: 9, limitY: 6}
+      {x: 267, y: 199, rx: 23, ry: 32, limitX: 8, limitY: 6, side: "left"},
+      {x: 390, y: 224, rx: 24, ry: 32, limitX: 9, limitY: 6, side: "right"}
     ];
     let gooseGazeX = 0;
     let gooseGazeY = 0;
@@ -1777,6 +1778,25 @@
     let gooseTargetY = 0;
     let gooseGazeFrame = 0;
     let goosePointer = null;
+    function traceGooseSocket(ctx, side) {
+      // Контур проходит внутри нарисованного века. Поэтому радужка уходит под него,
+      // а также под край клюва слева, когда взгляд направлен в сторону.
+      ctx.beginPath();
+      if (side === "left") {
+        ctx.moveTo(234, 195);
+        ctx.bezierCurveTo(237, 175, 253, 169, 271, 170);
+        ctx.bezierCurveTo(289, 171, 295, 185, 289, 201);
+        ctx.bezierCurveTo(280, 203, 273, 210, 269, 216);
+        ctx.bezierCurveTo(254, 229, 237, 216, 234, 195);
+      } else {
+        ctx.moveTo(359, 222);
+        ctx.bezierCurveTo(359, 205, 373, 194, 390, 193);
+        ctx.bezierCurveTo(409, 193, 422, 208, 424, 225);
+        ctx.bezierCurveTo(425, 245, 408, 253, 391, 253);
+        ctx.bezierCurveTo(371, 252, 358, 240, 359, 222);
+      }
+      ctx.closePath();
+    }
     function drawGooseGaze() {
       if (!gooseGazeContext || !gooseOpenImage?.complete || !gooseOpenImage.naturalWidth) return;
       const ctx = gooseGazeContext;
@@ -1784,6 +1804,9 @@
       for (const eye of gooseEyes) {
         const dx = gooseGazeX * eye.limitX;
         const dy = gooseGazeY * eye.limitY;
+        ctx.save();
+        traceGooseSocket(ctx, eye.side);
+        ctx.clip();
         // Сначала закрываем неподвижную радужку светлой частью глазного яблока.
         const white = ctx.createRadialGradient(eye.x - 7, eye.y - 12, 4, eye.x, eye.y, 41);
         white.addColorStop(0, "#fffdf5");
@@ -1801,6 +1824,7 @@
         ctx.drawImage(gooseOpenImage,
           eye.x - eye.rx, eye.y - eye.ry, eye.rx * 2, eye.ry * 2,
           eye.x - eye.rx + dx, eye.y - eye.ry + dy, eye.rx * 2, eye.ry * 2);
+        ctx.restore();
         ctx.restore();
       }
     }
