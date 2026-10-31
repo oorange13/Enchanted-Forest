@@ -2030,6 +2030,17 @@
         ctx.beginPath();
         ctx.ellipse(eye.x + dx, eye.y + dy, eye.rx, eye.ry, 0, 0, Math.PI * 2);
         ctx.clip();
+        if (eye.side === "left") {
+          // В исходном кадре клюв перекрывает нижний правый край радужки.
+          // Не переносим его коричневую обводку вместе с движущимся глазом.
+          ctx.beginPath();
+          ctx.moveTo(eye.x + dx - eye.rx, eye.y + dy - eye.ry);
+          ctx.lineTo(eye.x + dx + eye.rx, eye.y + dy - eye.ry);
+          ctx.lineTo(eye.x + dx + eye.rx, eye.y + dy + 9);
+          ctx.lineTo(eye.x + dx - eye.rx, eye.y + dy + 33);
+          ctx.closePath();
+          ctx.clip();
+        }
         ctx.drawImage(gooseOpenImage,
           eye.x - eye.rx, eye.y - eye.ry, eye.rx * 2, eye.ry * 2,
           eye.x - eye.rx + dx, eye.y - eye.ry + dy, eye.rx * 2, eye.ry * 2);
