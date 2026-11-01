@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enchanted Forest
-// @version      3.10.40
+// @version      3.10.41
 // @namespace    http://tampermonkey.net/
 
 // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
@@ -1671,9 +1671,11 @@
     const sausageGazeSource = new Image();
     sausageGazeSource.src = SAUSAGE_BLINK_SHEET;
     const sausageGazeContext = sausageGaze.getContext("2d");
+    // Координаты измерены по первому кадру спрайта 450 x 250.
+    // Перемещаем только радужки; исходные поза, лицо и кадры моргания не меняются.
     const sausageEyes = [
-      {x: 156, y: 161, rx: 20, ry: 23, side: "left"},
-      {x: 255, y: 161, rx: 20, ry: 23, side: "right"}
+      {x: 155, y: 160, rx: 17.5, ry: 21.5, side: "left"},
+      {x: 255, y: 160, rx: 18, ry: 21.5, side: "right"}
     ];
     let sausageGazeX = 0;
     let sausageGazeY = 0;
@@ -1681,43 +1683,77 @@
     let sausageTargetY = 0;
     let sausageGazeFrame = 0;
     let sausagePointer = null;
+
     function traceSausageSocket(ctx, side) {
+      // Маска совпадает с белком оригинального глаза, включая внешние края.
+      // Старый контур обрезал белок снизу и оставлял фрагменты исходного зрачка.
       ctx.beginPath();
       if (side === "left") {
-        ctx.moveTo(120, 158);
-        ctx.bezierCurveTo(123, 140, 139, 136, 155, 138);
-        ctx.bezierCurveTo(171, 139, 177, 153, 175, 169);
-        ctx.bezierCurveTo(173, 182, 160, 187, 145, 184);
-        ctx.bezierCurveTo(128, 182, 119, 172, 120, 158);
+        ctx.moveTo(119.5, 164);
+        ctx.bezierCurveTo(117.5, 149, 129, 136, 147, 135.3);
+        ctx.bezierCurveTo(166, 132, 177.8, 144.1, 179, 160);
+        ctx.bezierCurveTo(180.2, 174, 171.1, 184.2, 152, 184);
+        ctx.bezierCurveTo(133.4, 184, 119.3, 178.9, 119.5, 164);
       } else {
-        ctx.moveTo(238, 158);
-        ctx.bezierCurveTo(241, 140, 256, 136, 271, 138);
-        ctx.bezierCurveTo(287, 140, 296, 154, 295, 169);
-        ctx.bezierCurveTo(293, 181, 278, 187, 261, 184);
-        ctx.bezierCurveTo(245, 182, 237, 172, 238, 158);
+        ctx.moveTo(235.4, 163);
+        ctx.bezierCurveTo(235, 146, 247, 135, 264, 134.2);
+        ctx.bezierCurveTo(281, 133.3, 298, 147, 298, 165);
+        ctx.bezierCurveTo(299, 178, 284, 183, 268, 183.5);
+        ctx.bezierCurveTo(252, 183.5, 236, 177, 235.4, 163);
       }
       ctx.closePath();
     }
+
+    function drawSausageUpperRim(ctx, side) {
+      // Восстанавливаем верхнюю линию века, которую частично перекрывал
+      // исходный зрачок. Нижний контур не добавляем, чтобы не менять рисунок.
+      ctx.save();
+      ctx.lineWidth = 2.8;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "#1c120e";
+      ctx.beginPath();
+      if (side === "left") {
+        ctx.moveTo(120.7, 171);
+        ctx.bezierCurveTo(116.5, 153, 126, 136, 146, 135.2);
+        ctx.bezierCurveTo(163.8, 131.2, 176.2, 144.3, 178, 163.5);
+      } else {
+        ctx.moveTo(235.7, 169);
+        ctx.bezierCurveTo(231.6, 152, 244.6, 135.1, 264.2, 134.2);
+        ctx.bezierCurveTo(283.8, 132.4, 297.7, 147.4, 298, 169.5);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
     function drawSausageGaze() {
       if (!sausageGazeContext || !sausageGazeSource.complete || !sausageGazeSource.naturalWidth) return;
       const ctx = sausageGazeContext;
-      ctx.clearRect(0, 0, 450, 250);
-      // В центральном положении показываем исходный кадр без перерисовки глаз.
+      ctx.clearRect(0, 0, sausageGaze.width, sausageGaze.height);
+      // При взгляде прямо виден оригинальный, ничем не изменённый спрайт.
       if (Math.abs(sausageGazeX) < .03 && Math.abs(sausageGazeY) < .03) return;
+
       for (const eye of sausageEyes) {
-        const dx = sausageGazeX * 7;
-        const dy = sausageGazeY * 5;
+        // Небольшая амплитуда сохраняет целую радужку внутри глазницы.
+        const dx = sausageGazeX * 6;
+        const dy = sausageGazeY * 3;
         ctx.save();
         traceSausageSocket(ctx, eye.side);
         ctx.clip();
-        const white = ctx.createLinearGradient(0, eye.y - 25, 0, eye.y + 25);
-        white.addColorStop(0, "#fffdf9");
-        white.addColorStop(.65, "#fff8f5");
-        white.addColorStop(1, "#f2dcdb");
+
+        // Перекрываем старые зрачки внутри всей глазницы перед отрисовкой новых.
+        // Благодаря общей маске никакие остатки исходного зрачка не торчат сбоку.
+        const white = ctx.createLinearGradient(0, 136, 0, 188);
+        white.addColorStop(0, "#ebe5e9");
+        white.addColorStop(.24, "#ffffff");
+        white.addColorStop(.65, "#fffefe");
+        white.addColorStop(.86, "#fffbfb");
+        white.addColorStop(1, "#fce3df");
         ctx.fillStyle = white;
-        // Закрываем всю внутреннюю область глазницы: иначе край исходного
-        // зрачка остаётся на месте и виден рядом с движущимся.
-        ctx.fillRect(eye.x - 40, eye.y - 35, 80, 70);
+        ctx.fillRect(115, 130, 190, 60);
+
+        // Маска радужки отделяет её от остальной картинки, чтобы вместе
+        // со взглядом не перемещались случайные кусочки белка и контура.
         ctx.save();
         ctx.beginPath();
         ctx.ellipse(eye.x + dx, eye.y + dy, eye.rx, eye.ry, 0, 0, Math.PI * 2);
@@ -1727,6 +1763,7 @@
           eye.x - eye.rx + dx, eye.y - eye.ry + dy, eye.rx * 2, eye.ry * 2);
         ctx.restore();
         ctx.restore();
+        drawSausageUpperRim(ctx, eye.side);
       }
     }
     function animateSausageGaze() {
