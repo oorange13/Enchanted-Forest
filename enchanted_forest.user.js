@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enchanted Forest
-// @version      3.10.44
+// @version      3.10.45
 // @namespace    http://tampermonkey.net/
 
 // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
@@ -509,8 +509,6 @@
         transform-origin:50% 80%
       }
       #${ID} .ef-sausage-sprite.ef-blinking{animation:ef-sausage-blink-body .43s ease-in-out 1}
-      #${ID} .ef-sausage-gaze{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
-      #${ID} .ef-sausage:not([data-blink-frame="0"]) .ef-sausage-gaze{opacity:0}
       #${ID} .ef-sausage-hat{position:absolute;left:21%;top:-13%;width:58%;height:auto;z-index:2;pointer-events:none;user-select:none}
       #${ID} .ef-sausage:hover{filter:drop-shadow(0 0 15px #ffce8599)}
       #${ID} .ef-sausage.ef-bounce{animation:ef-bounce .65s ease}
@@ -560,8 +558,7 @@
       #${ID} .ef-goose-open{z-index:1}
       #${ID} .ef-goose-gaze{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;opacity:1}
       #${ID}.ef-no-eye-tracking .ef-goose-gaze,
-      #${ID}.ef-no-eye-tracking .ef-snail-gaze,
-      #${ID}.ef-no-eye-tracking .ef-sausage-gaze{display:none}
+      #${ID}.ef-no-eye-tracking .ef-snail-gaze{display:none}
       #${ID} .ef-goose:not([data-blink-frame="open"]) .ef-goose-gaze{opacity:0}
       #${ID} .ef-goose-eyes{z-index:2;opacity:0}
       #${ID} .ef-goose[data-blink-frame="half"] .ef-goose-half,
@@ -1660,199 +1657,6 @@
     sausageHat.alt = "";
     sausageHat.setAttribute("aria-hidden", "true");
     sausageSprite.append(sausageHat);
-    // Взгляд рисуется поверх открытого кадра, но под шляпкой и контурами глаз.
-    // Сами радужки и блики берём из первого кадра исходного спрайта.
-    const sausageGaze = document.createElement("canvas");
-    sausageGaze.className = "ef-sausage-gaze";
-    sausageGaze.width = 450;
-    sausageGaze.height = 250;
-    sausageGaze.setAttribute("aria-hidden", "true");
-    sausageSprite.insertBefore(sausageGaze, sausageHat);
-    const sausageGazeSource = new Image();
-    sausageGazeSource.src = SAUSAGE_BLINK_SHEET;
-    const sausageGazeContext = sausageGaze.getContext("2d");
-    // Координаты измерены по первому кадру спрайта 450 x 250.
-    // Перемещаем только радужки; исходные поза, лицо и кадры моргания не меняются.
-    // Взгляд создаётся из исходных пикселей первого кадра.
-    // Контуры, блики, белки и фактура радужки остаются оригинальными.
-    // Движущаяся часть глаза отделена от неподвижного исходного спрайта.
-    // Первый кадр используется как точный источник текстуры радужки и зрачка.
-    const sausageEyes = [
-      {
-        x: 115, y: 130, w: 69, h: 58, cx: 157.5, cy: 158.5, rx: 20, ry: 24,
-        irisCx: 156.7, irisCy: 158.8, irisRx: 17.9, irisRy: 21.3,
-        moveXPos: 2.45, moveXNeg: 3.0, moveY: 1.75,
-        side: "left"
-      },
-      {
-        x: 231, y: 130, w: 70, h: 58, cx: 255, cy: 158.5, rx: 20, ry: 24,
-        irisCx: 255.7, irisCy: 158.0, irisRx: 17.4, irisRy: 20.9,
-        moveXPos: 2.85, moveXNeg: 2.8, moveY: 1.75,
-        cleanup: "right",
-        side: "right"
-      }
-    ];
-    let sausageGazeX = 0;
-    let sausageGazeY = 0;
-    let sausageTargetX = 0;
-    let sausageTargetY = 0;
-    let sausageGazeFrame = 0;
-    let sausagePointer = null;
-    let sausageEyeOpenFrame = null;
-    let sausageEyeRims = null;
-
-    function traceSausageSocket(ctx, side) {
-      // Точная неподвижная форма глазницы исходного открытого кадра.
-      ctx.beginPath();
-      if (side === "left") {
-        ctx.moveTo(119.5, 164);
-        ctx.bezierCurveTo(117.5, 149, 129, 136, 147, 135.3);
-        ctx.bezierCurveTo(166, 132, 177.8, 144.1, 179, 160);
-        ctx.bezierCurveTo(180.2, 174, 171.1, 184.2, 152, 184);
-        ctx.bezierCurveTo(133.4, 184, 119.3, 178.9, 119.5, 164);
-      } else {
-        ctx.moveTo(235.4, 163);
-        ctx.bezierCurveTo(235, 146, 247, 135, 264, 134.2);
-        ctx.bezierCurveTo(281, 133.3, 298, 147, 298, 165);
-        ctx.bezierCurveTo(299, 178, 284, 183, 268, 183.5);
-        ctx.bezierCurveTo(252, 183.5, 236, 177, 235.4, 163);
-      }
-      ctx.closePath();
-    }
-
-    function prepareSausageEyes() {
-      if (!sausageGazeSource.complete || !sausageGazeSource.naturalWidth || !sausageGazeContext) return;
-      const source = document.createElement("canvas");
-      source.width = 450;
-      source.height = 250;
-      const sourceCtx = source.getContext("2d", {willReadFrequently: true});
-      if (!sourceCtx) return;
-      sourceCtx.drawImage(sausageGazeSource, 0, 0, 450, 250, 0, 0, 450, 250);
-      const sourceData = sourceCtx.getImageData(0, 0, 450, 250).data;
-      // Выделяем только верхнюю чёрную кромку века первого кадра.
-      // Она остаётся неподвижной поверх радужки при любом направлении взгляда.
-      const rims = sausageEyes.map(eye => {
-        const canvas = document.createElement("canvas");
-        canvas.width = eye.w;
-        canvas.height = eye.h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return null;
-        const pixels = ctx.createImageData(eye.w, eye.h);
-        for (let x = 0; x < eye.w; x++) {
-          const xx = eye.x + x;
-          let top = -1;
-          for (let yy = 132; yy < 162; yy++) {
-            const offset = (yy * 450 + xx) * 4;
-            const light = (sourceData[offset] + sourceData[offset + 1] + sourceData[offset + 2]) / 3;
-            if (sourceData[offset + 3] > 200 && light < 65) {top = yy; break;}
-          }
-          if (top < 0) continue;
-          for (let yy = top; yy < Math.min(top + 5, eye.y + eye.h); yy++) {
-            const offset = (yy * 450 + xx) * 4;
-            const light = (sourceData[offset] + sourceData[offset + 1] + sourceData[offset + 2]) / 3;
-            if (light >= 125) continue;
-            const dest = ((yy - eye.y) * eye.w + x) * 4;
-            for (let c = 0; c < 4; c++) pixels.data[dest + c] = sourceData[offset + c];
-          }
-        }
-        ctx.putImageData(pixels, 0, 0);
-        return canvas;
-      });
-      sausageEyeOpenFrame = source;
-      sausageEyeRims = rims;
-      drawSausageGaze();
-    }
-
-    function drawSausageGaze() {
-      const ctx = sausageGazeContext;
-      if (!ctx) return;
-      ctx.clearRect(0, 0, sausageGaze.width, sausageGaze.height);
-      if (!sausageEyeOpenFrame || !sausageEyeRims) return;
-      // При нейтральном взгляде выводим исходный спрайт без дополнительной отрисовки.
-      if (Math.abs(sausageGazeX) < .002 && Math.abs(sausageGazeY) < .002) return;
-      for (let i = 0; i < sausageEyes.length; i++) {
-        const eye = sausageEyes[i];
-        const shiftX = sausageGazeX * (sausageGazeX >= 0 ? (eye.moveXPos ?? 4) : (eye.moveXNeg ?? 4));
-        const shiftY = sausageGazeY * (eye.moveY ?? 2);
-        ctx.save();
-        traceSausageSocket(ctx, eye.side);
-        ctx.clip();
-        // Закрашиваем уже нарисованную радужку ВНУТРИ глазницы, поэтому
-        // исходная радужка не просвечивает под движущейся и не возникает дубля.
-        const white = ctx.createLinearGradient(0, 136, 0, 186);
-        white.addColorStop(0, "#f5e1df");
-        white.addColorStop(.45, "#fcf8f9");
-        white.addColorStop(1, "#f9e7e2");
-        ctx.fillStyle = white;
-        ctx.fillRect(eye.x, eye.y, eye.w, eye.h);
-        ctx.save();
-        // Отдельный клип только для радужки с исходным бликом и зрачком.
-        // Белок и линия века не трансформируются.
-        ctx.translate(shiftX, shiftY);
-        ctx.beginPath();
-        ctx.ellipse(eye.irisCx ?? eye.cx, eye.irisCy ?? eye.cy, eye.irisRx ?? eye.rx, eye.irisRy ?? eye.ry, 0, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(sausageEyeOpenFrame, 0, 0);
-        ctx.restore();
-        ctx.restore();
-        // Исходный верхний контур века восстанавливается поверх радужки.
-        const rim = sausageEyeRims[i];
-        if (rim) ctx.drawImage(rim, eye.x, eye.y);
-        if (eye.cleanup === "right") {
-          ctx.save();
-          traceSausageSocket(ctx, eye.side);
-          ctx.clip();
-          const patch = ctx.createRadialGradient(245.5, 171.5, 1.5, 247.2, 172.0, 10.5);
-          patch.addColorStop(0, "rgba(251, 246, 246, 0.96)");
-          patch.addColorStop(0.72, "rgba(250, 244, 244, 0.76)");
-          patch.addColorStop(1, "rgba(250, 244, 244, 0)");
-          ctx.fillStyle = patch;
-          ctx.beginPath();
-          ctx.ellipse(247.0, 172.0, 8.8, 6.9, -0.1, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-      }
-    }
-    function animateSausageGaze() {
-      sausageGazeFrame = 0;
-      if (disposed || !settings.eyeTracking || selectedCharacter !== "sausage" || !characterVisible || document.hidden) return;
-      if (sausagePointer) {
-        const rect = sausage.getBoundingClientRect();
-        const centerX = rect.left + rect.width * .46;
-        const centerY = rect.top + rect.height * .64;
-        sausageTargetX = Math.max(-1, Math.min(1, (sausagePointer.x - centerX) / Math.max(100, rect.width * 1.3)));
-        sausageTargetY = Math.max(-1, Math.min(1, (sausagePointer.y - centerY) / Math.max(100, rect.height * 1.3)));
-      }
-      sausageGazeX += (sausageTargetX - sausageGazeX) * .22;
-      sausageGazeY += (sausageTargetY - sausageGazeY) * .22;
-      drawSausageGaze();
-      if (Math.abs(sausageTargetX - sausageGazeX) > .01 || Math.abs(sausageTargetY - sausageGazeY) > .01) {
-        sausageGazeFrame = requestAnimationFrame(animateSausageGaze);
-      }
-    }
-    function scheduleSausageGaze() {
-      if (!sausageGazeFrame) sausageGazeFrame = requestAnimationFrame(animateSausageGaze);
-    }
-    function resetSausageGaze() {
-      cancelAnimationFrame(sausageGazeFrame);
-      sausageGazeFrame = 0;
-      sausagePointer = null;
-      sausageTargetX = sausageTargetY = sausageGazeX = sausageGazeY = 0;
-      drawSausageGaze();
-    }
-    listen(sausageGazeSource, "load", prepareSausageEyes);
-    if (sausageGazeSource.complete) prepareSausageEyes();
-    listen(window, "pointermove", event => {
-      if (!settings.eyeTracking || selectedCharacter !== "sausage" || !characterVisible) return;
-      sausagePointer = {x: event.clientX, y: event.clientY};
-      scheduleSausageGaze();
-    });
-    listen(document, "pointerleave", () => {
-      sausagePointer = null;
-      sausageTargetX = sausageTargetY = 0;
-      scheduleSausageGaze();
-    });
     sausage.append(sausageSprite);
     sausage.setAttribute("role", "button");
     sausage.setAttribute("tabindex", "0");
@@ -2335,7 +2139,6 @@
     const characters = {mushroom, frog, pumpkin, sausage, snail, goose, aliens};
 
     function updateCharacterVisibility() {
-      if (!characterVisible || selectedCharacter !== "sausage") resetSausageGaze();
       if (!characterVisible || selectedCharacter !== "snail") resetSnailGaze();
       if (!characterVisible || selectedCharacter !== "goose") resetGooseGaze();
       mushroom.style.display = characterVisible && selectedCharacter === "mushroom" ? "" : "none";
@@ -2759,7 +2562,6 @@
       root.classList.toggle("ef-no-glow", !settings.glow);
       root.classList.toggle("ef-no-eye-tracking", !settings.eyeTracking);
       if (!settings.eyeTracking) {
-        resetSausageGaze();
         resetSnailGaze();
         resetGooseGaze();
       }
@@ -2921,7 +2723,6 @@
       resetGooseBlink();
       resetAliensBlink();
       resetAliensMotion();
-      cancelAnimationFrame(sausageGazeFrame);
       cancelAnimationFrame(snailGazeFrame);
       cancelAnimationFrame(gooseGazeFrame);
       gooseSettleAnimation?.cancel();
