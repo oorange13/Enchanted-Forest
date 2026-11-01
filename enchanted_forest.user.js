@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enchanted Forest
-// @version      3.10.43
+// @version      3.10.44
 // @namespace    http://tampermonkey.net/
 
 // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
@@ -1678,8 +1678,19 @@
     // Движущаяся часть глаза отделена от неподвижного исходного спрайта.
     // Первый кадр используется как точный источник текстуры радужки и зрачка.
     const sausageEyes = [
-      {x: 115, y: 130, w: 69, h: 58, cx: 157.5, cy: 158.5, rx: 20, ry: 24, side: "left"},
-      {x: 231, y: 130, w: 70, h: 58, cx: 255, cy: 158.5, rx: 20, ry: 24, side: "right"}
+      {
+        x: 115, y: 130, w: 69, h: 58, cx: 157.5, cy: 158.5, rx: 20, ry: 24,
+        irisCx: 156.7, irisCy: 158.8, irisRx: 17.9, irisRy: 21.3,
+        moveXPos: 2.45, moveXNeg: 3.0, moveY: 1.75,
+        side: "left"
+      },
+      {
+        x: 231, y: 130, w: 70, h: 58, cx: 255, cy: 158.5, rx: 20, ry: 24,
+        irisCx: 255.7, irisCy: 158.0, irisRx: 17.4, irisRy: 20.9,
+        moveXPos: 2.85, moveXNeg: 2.8, moveY: 1.75,
+        cleanup: "right",
+        side: "right"
+      }
     ];
     let sausageGazeX = 0;
     let sausageGazeY = 0;
@@ -1759,10 +1770,10 @@
       if (!sausageEyeOpenFrame || !sausageEyeRims) return;
       // При нейтральном взгляде выводим исходный спрайт без дополнительной отрисовки.
       if (Math.abs(sausageGazeX) < .002 && Math.abs(sausageGazeY) < .002) return;
-      const dx = sausageGazeX * 4;
-      const dy = sausageGazeY * 2;
       for (let i = 0; i < sausageEyes.length; i++) {
         const eye = sausageEyes[i];
+        const shiftX = sausageGazeX * (sausageGazeX >= 0 ? (eye.moveXPos ?? 4) : (eye.moveXNeg ?? 4));
+        const shiftY = sausageGazeY * (eye.moveY ?? 2);
         ctx.save();
         traceSausageSocket(ctx, eye.side);
         ctx.clip();
@@ -1777,9 +1788,9 @@
         ctx.save();
         // Отдельный клип только для радужки с исходным бликом и зрачком.
         // Белок и линия века не трансформируются.
-        ctx.translate(dx, dy);
+        ctx.translate(shiftX, shiftY);
         ctx.beginPath();
-        ctx.ellipse(eye.cx, eye.cy, eye.rx, eye.ry, 0, 0, Math.PI * 2);
+        ctx.ellipse(eye.irisCx ?? eye.cx, eye.irisCy ?? eye.cy, eye.irisRx ?? eye.rx, eye.irisRy ?? eye.ry, 0, 0, Math.PI * 2);
         ctx.clip();
         ctx.drawImage(sausageEyeOpenFrame, 0, 0);
         ctx.restore();
@@ -1787,6 +1798,20 @@
         // Исходный верхний контур века восстанавливается поверх радужки.
         const rim = sausageEyeRims[i];
         if (rim) ctx.drawImage(rim, eye.x, eye.y);
+        if (eye.cleanup === "right") {
+          ctx.save();
+          traceSausageSocket(ctx, eye.side);
+          ctx.clip();
+          const patch = ctx.createRadialGradient(245.5, 171.5, 1.5, 247.2, 172.0, 10.5);
+          patch.addColorStop(0, "rgba(251, 246, 246, 0.96)");
+          patch.addColorStop(0.72, "rgba(250, 244, 244, 0.76)");
+          patch.addColorStop(1, "rgba(250, 244, 244, 0)");
+          ctx.fillStyle = patch;
+          ctx.beginPath();
+          ctx.ellipse(247.0, 172.0, 8.8, 6.9, -0.1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
       }
     }
     function animateSausageGaze() {
