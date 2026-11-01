@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enchanted Forest
-// @version      3.10.42
+// @version      3.10.43
 // @namespace    http://tampermonkey.net/
 
 // @updateURL    https://raw.githubusercontent.com/oorange13/Enchanted-Forest/main/enchanted_forest.user.js
@@ -1675,9 +1675,11 @@
     // Перемещаем только радужки; исходные поза, лицо и кадры моргания не меняются.
     // Взгляд создаётся из исходных пикселей первого кадра.
     // Контуры, блики, белки и фактура радужки остаются оригинальными.
+    // Движущаяся часть глаза отделена от неподвижного исходного спрайта.
+    // Первый кадр используется как точный источник текстуры радужки и зрачка.
     const sausageEyes = [
-      {x: 115, y: 130, w: 69, h: 58, cx: 155, cy: 160, side: "left"},
-      {x: 231, y: 130, w: 70, h: 58, cx: 255, cy: 160, side: "right"}
+      {x: 115, y: 130, w: 69, h: 58, cx: 157.5, cy: 158.5, rx: 20, ry: 24, side: "left"},
+      {x: 231, y: 130, w: 70, h: 58, cx: 255, cy: 158.5, rx: 20, ry: 24, side: "right"}
     ];
     let sausageGazeX = 0;
     let sausageGazeY = 0;
@@ -1685,11 +1687,11 @@
     let sausageTargetY = 0;
     let sausageGazeFrame = 0;
     let sausagePointer = null;
-    let sausageEyeSourcePixels = null;
-    let sausageEyePatches = null;
+    let sausageEyeOpenFrame = null;
+    let sausageEyeRims = null;
 
     function traceSausageSocket(ctx, side) {
-      // Область белка глаза по координатам исходного кадра 450x250.
+      // Точная неподвижная форма глазницы исходного открытого кадра.
       ctx.beginPath();
       if (side === "left") {
         ctx.moveTo(119.5, 164);
@@ -1713,57 +1715,40 @@
       source.width = 450;
       source.height = 250;
       const sourceCtx = source.getContext("2d", {willReadFrequently: true});
-      const mask = document.createElement("canvas");
-      mask.width = 450;
-      mask.height = 250;
-      const maskCtx = mask.getContext("2d", {willReadFrequently: true});
-      if (!sourceCtx || !maskCtx) return;
-      // Спрайт содержит 12 кадров; используем только открытые глаза (кадр 0).
+      if (!sourceCtx) return;
       sourceCtx.drawImage(sausageGazeSource, 0, 0, 450, 250, 0, 0, 450, 250);
-      sausageEyeSourcePixels = sourceCtx.getImageData(0, 0, 450, 250).data;
-      sausageEyePatches = sausageEyes.map(eye => {
-        maskCtx.clearRect(0, 0, 450, 250);
-        traceSausageSocket(maskCtx, eye.side);
-        maskCtx.fillStyle = "#fff";
-        maskCtx.fill();
-        const pixels = maskCtx.getImageData(eye.x, eye.y, eye.w, eye.h).data;
-        const width = eye.w, height = eye.h;
-        const distance = new Float32Array(width * height);
-        const diagonal = Math.SQRT2;
-        // Расстояние до контура глаза: возле линии века движение равно нулю.
-        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-          const i = y * width + x;
-          if (pixels[i * 4 + 3] < 128) continue;
-          let d = 50;
-          if (x === 0 || y === 0) d = 1;
-          if (x > 0) d = Math.min(d, distance[i - 1] + 1);
-          if (y > 0) d = Math.min(d, distance[i - width] + 1);
-          if (x > 0 && y > 0) d = Math.min(d, distance[i - width - 1] + diagonal);
-          if (x + 1 < width && y > 0) d = Math.min(d, distance[i - width + 1] + diagonal);
-          distance[i] = d;
+      const sourceData = sourceCtx.getImageData(0, 0, 450, 250).data;
+      // Выделяем только верхнюю чёрную кромку века первого кадра.
+      // Она остаётся неподвижной поверх радужки при любом направлении взгляда.
+      const rims = sausageEyes.map(eye => {
+        const canvas = document.createElement("canvas");
+        canvas.width = eye.w;
+        canvas.height = eye.h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+        const pixels = ctx.createImageData(eye.w, eye.h);
+        for (let x = 0; x < eye.w; x++) {
+          const xx = eye.x + x;
+          let top = -1;
+          for (let yy = 132; yy < 162; yy++) {
+            const offset = (yy * 450 + xx) * 4;
+            const light = (sourceData[offset] + sourceData[offset + 1] + sourceData[offset + 2]) / 3;
+            if (sourceData[offset + 3] > 200 && light < 65) {top = yy; break;}
+          }
+          if (top < 0) continue;
+          for (let yy = top; yy < Math.min(top + 5, eye.y + eye.h); yy++) {
+            const offset = (yy * 450 + xx) * 4;
+            const light = (sourceData[offset] + sourceData[offset + 1] + sourceData[offset + 2]) / 3;
+            if (light >= 125) continue;
+            const dest = ((yy - eye.y) * eye.w + x) * 4;
+            for (let c = 0; c < 4; c++) pixels.data[dest + c] = sourceData[offset + c];
+          }
         }
-        for (let y = height - 1; y >= 0; y--) for (let x = width - 1; x >= 0; x--) {
-          const i = y * width + x;
-          if (!distance[i]) continue;
-          let d = distance[i];
-          if (x === width - 1 || y === height - 1) d = Math.min(d, 1);
-          if (x + 1 < width) d = Math.min(d, distance[i + 1] + 1);
-          if (y + 1 < height) d = Math.min(d, distance[i + width] + 1);
-          if (x + 1 < width && y + 1 < height) d = Math.min(d, distance[i + width + 1] + diagonal);
-          if (x > 0 && y + 1 < height) d = Math.min(d, distance[i + width - 1] + diagonal);
-          distance[i] = d;
-        }
-        const influence = new Float32Array(width * height);
-        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-          const i = y * width + x;
-          if (!distance[i]) continue;
-          const t = Math.max(0, Math.min(1, (distance[i] - 1.4) / 7));
-          const fade = t * t * (3 - 2 * t);
-          const normalizedX = (eye.x + x - eye.cx) / 35;
-          influence[i] = fade * Math.exp(-0.5 * normalizedX ** 4);
-        }
-        return {eye, influence, output: sausageGazeContext.createImageData(width, height)};
+        ctx.putImageData(pixels, 0, 0);
+        return canvas;
       });
+      sausageEyeOpenFrame = source;
+      sausageEyeRims = rims;
       drawSausageGaze();
     }
 
@@ -1771,34 +1756,37 @@
       const ctx = sausageGazeContext;
       if (!ctx) return;
       ctx.clearRect(0, 0, sausageGaze.width, sausageGaze.height);
-      if (!sausageEyePatches || !sausageEyeSourcePixels) return;
-      // В исходной позиции overlay полностью прозрачный, видна исходная графика.
-      if (Math.abs(sausageGazeX) < 0.002 && Math.abs(sausageGazeY) < 0.002) return;
-      const source = sausageEyeSourcePixels;
-      const dx = sausageGazeX * 5;
-      const dy = sausageGazeY * 2.5;
-      for (const {eye, influence, output} of sausageEyePatches) {
-        const dst = output.data;
-        for (let y = 0; y < eye.h; y++) for (let x = 0; x < eye.w; x++) {
-          const i = y * eye.w + x, o = i * 4;
-          if (!influence[i]) {dst[o + 3] = 0; continue;}
-          // Плавно сдвигаем оригинальные пиксели радужки, не перерисовывая глаз.
-          // К границе век смещение затухает, поэтому толщина обводки неизменна.
-          const sx = eye.x + x - dx * influence[i];
-          const sy = eye.y + y - dy * influence[i];
-          const x0 = Math.floor(sx), y0 = Math.floor(sy);
-          const fx = sx - x0, fy = sy - y0;
-          const p00 = (y0 * 450 + x0) * 4;
-          const p10 = p00 + 4, p01 = p00 + 450 * 4, p11 = p01 + 4;
-          for (let c = 0; c < 3; c++) {
-            dst[o + c] = source[p00 + c] * (1 - fx) * (1 - fy)
-              + source[p10 + c] * fx * (1 - fy)
-              + source[p01 + c] * (1 - fx) * fy
-              + source[p11 + c] * fx * fy;
-          }
-          dst[o + 3] = 255;
-        }
-        ctx.putImageData(output, eye.x, eye.y);
+      if (!sausageEyeOpenFrame || !sausageEyeRims) return;
+      // При нейтральном взгляде выводим исходный спрайт без дополнительной отрисовки.
+      if (Math.abs(sausageGazeX) < .002 && Math.abs(sausageGazeY) < .002) return;
+      const dx = sausageGazeX * 4;
+      const dy = sausageGazeY * 2;
+      for (let i = 0; i < sausageEyes.length; i++) {
+        const eye = sausageEyes[i];
+        ctx.save();
+        traceSausageSocket(ctx, eye.side);
+        ctx.clip();
+        // Закрашиваем уже нарисованную радужку ВНУТРИ глазницы, поэтому
+        // исходная радужка не просвечивает под движущейся и не возникает дубля.
+        const white = ctx.createLinearGradient(0, 136, 0, 186);
+        white.addColorStop(0, "#f5e1df");
+        white.addColorStop(.45, "#fcf8f9");
+        white.addColorStop(1, "#f9e7e2");
+        ctx.fillStyle = white;
+        ctx.fillRect(eye.x, eye.y, eye.w, eye.h);
+        ctx.save();
+        // Отдельный клип только для радужки с исходным бликом и зрачком.
+        // Белок и линия века не трансформируются.
+        ctx.translate(dx, dy);
+        ctx.beginPath();
+        ctx.ellipse(eye.cx, eye.cy, eye.rx, eye.ry, 0, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(sausageEyeOpenFrame, 0, 0);
+        ctx.restore();
+        ctx.restore();
+        // Исходный верхний контур века восстанавливается поверх радужки.
+        const rim = sausageEyeRims[i];
+        if (rim) ctx.drawImage(rim, eye.x, eye.y);
       }
     }
     function animateSausageGaze() {
